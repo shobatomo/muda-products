@@ -48,11 +48,15 @@ export function ProductScene() {
                 fov: 28,
             }}
             dpr={[1, 2]}
+            gl={{
+                toneMappingExposure: 0.4,
+            }}
         >
-            <ambientLight intensity={1.2} />
+            {/* HDRIがあるので不要 */}
+            {/* <ambientLight intensity={1} /> */}
 
             {/* Key Light */}
-            <directionalLight position={[-2, 1, 1]} intensity={10} />
+            <directionalLight position={[-2, 4, 3]} intensity={10} />
 
             {/* Fill Light */}
             <directionalLight position={[7, 2, -2]} intensity={2} />
@@ -60,10 +64,17 @@ export function ProductScene() {
             {/* Rim Light */}
             <directionalLight position={[-5, 3, -5]} intensity={3} />
 
+            {/* Rim Light2 */}
+            <directionalLight position={[0, -3, -3]} intensity={0.8} />
+
             <MudaDial />
 
             {/* HDRIを追加 background={false}で背景を削除　反射のみを反映 */}
-            <Environment preset="studio" background={false} />
+            <Environment
+                preset="studio"
+                background={false}
+                environmentIntensity={0.8}
+            />
 
             <OrbitControls
                 enablePan={false}
