@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# テストモデル　サイズが大きいのでgit管理はしない
+/public/models/muda-dial.glb
+/public/models/muda-dial-2k-meshopt.glb
+/public/models/muda-dial-2k-meshopt-medium.glb
+
+# 一時ファイルなのでgit管理しない
+/tmp/
