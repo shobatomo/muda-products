@@ -4,6 +4,7 @@ import { OrbitControls, useGLTF, Environment } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import type { Mesh } from "three";
+import { MudaDial } from "./three/MudaDial";
 
 // ------------------------------------------
 // テスト用にキューブを表示していたコンポーネント
@@ -33,10 +34,11 @@ import type { Mesh } from "three";
 // }
 
 // Dialを表示するための関数
-function ProductModel() {
-    const { scene } = useGLTF("/models/muda-dial-2k.glb");
-    return <primitive object={scene} position={[0, 0, 0]} scale={[1, 1, 1]} />;
-}
+// Dial用のコンポーネントを別で作成したので不要
+// function ProductModel() {
+//     const { scene } = useGLTF("/models/muda-dial-optimized.glb");
+//     return <primitive object={scene} position={[0, 0, 0]} scale={[1, 1, 1]} />;
+// }
 
 export function ProductScene() {
     return (
@@ -58,7 +60,7 @@ export function ProductScene() {
             {/* Rim Light */}
             <directionalLight position={[-5, 3, -5]} intensity={3} />
 
-            <ProductModel />
+            <MudaDial />
 
             {/* HDRIを追加 background={false}で背景を削除　反射のみを反映 */}
             <Environment preset="studio" background={false} />
