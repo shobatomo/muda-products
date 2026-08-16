@@ -9,7 +9,7 @@ export function Hero() {
                         MUDA PRODUCTS
                     </p>
 
-                    <h1 className="max-w-xl text-5xl font-medium leading-[1.05] tracking-[-0.04em] sm:text-6xl lg:text-7xl">
+                    <h1 className="max-w-xl whitespace-nowrap text-5xl font-medium leading-[1.05] tracking-[-0.04em] sm:text-6xl lg:text-7xl">
                         無駄にいい。
                         <br />
                         無駄がいい。
