@@ -66,6 +66,7 @@ export function ProductScene() {
                 fov: 28,
             }}
             dpr={[1, 1.5]}
+            style={{ touchAction: "none" }}
             gl={{
                 toneMappingExposure: 0.4,
             }}
@@ -96,7 +97,7 @@ export function ProductScene() {
                 environmentIntensity={0.8}
             />
 
-            {isDesktop && (
+            {/* {isDesktop && (
                 <OrbitControls
                     target={CAMERA_TARGET}
                     enablePan={false}
@@ -104,7 +105,7 @@ export function ProductScene() {
                     minPolarAngle={Math.PI / 3}
                     maxPolarAngle={(Math.PI * 2) / 3}
                 />
-            )}
+            )} */}
         </Canvas>
     );
 }
