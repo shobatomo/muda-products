@@ -1,10 +1,36 @@
 "use client";
 
 import { OrbitControls, useGLTF, Environment } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { useRef, useEffect, useState } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
+import { useLayoutEffect, useEffect, useState } from "react";
 import type { Mesh } from "three";
 import { MudaDial } from "./three/MudaDial";
+
+// カメラの設定を定義しておく
+const DESKTOP_CAMERA_POSITION: [number, number, number] = [0.165, 0.33, 0.165];
+const MOBILE_CAMERA_POSITION: [number, number, number] = [0.25, 0.18, 0.25];
+const CAMERA_TARGET: [number, number, number] = [0, 0, 0];
+
+// カメラを管理するためのコンポーネント
+type CameraSetupProps = {
+    isDesktop: boolean;
+};
+
+function CameraSetup({ isDesktop }: CameraSetupProps) {
+    const camera = useThree((state) => state.camera);
+
+    useLayoutEffect(() => {
+        const position = isDesktop
+            ? DESKTOP_CAMERA_POSITION
+            : MOBILE_CAMERA_POSITION;
+
+        camera.position.set(position[0], position[1], position[2]);
+
+        camera.lookAt(CAMERA_TARGET[0], CAMERA_TARGET[1], CAMERA_TARGET[2]);
+    }, [camera, isDesktop]);
+
+    return null;
+}
 
 //デスクトップかどうかを判別する
 function useIsDesktop() {
@@ -37,11 +63,6 @@ export function ProductScene() {
     return (
         <Canvas
             camera={{
-                position: [
-                    isDesktop ? 0.165 : 0.25,
-                    isDesktop ? 0.33 : 0.18,
-                    isDesktop ? 0.165 : 0.25,
-                ],
                 fov: 28,
             }}
             dpr={[1, 1.5]}
@@ -49,6 +70,8 @@ export function ProductScene() {
                 toneMappingExposure: 0.4,
             }}
         >
+            <CameraSetup isDesktop={isDesktop} />
+
             {/* HDRIがあるので不要 */}
             {/* <ambientLight intensity={1} /> */}
 
@@ -75,6 +98,7 @@ export function ProductScene() {
 
             {isDesktop && (
                 <OrbitControls
+                    target={CAMERA_TARGET}
                     enablePan={false}
                     enableZoom={false}
                     minPolarAngle={Math.PI / 3}
