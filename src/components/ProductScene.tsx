@@ -1,13 +1,12 @@
 "use client";
 
-import { OrbitControls, useGLTF, Environment } from "@react-three/drei";
+import { Environment } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useLayoutEffect, useEffect, useState } from "react";
-import type { Mesh } from "three";
 import { MudaDial } from "./three/MudaDial";
 
 // カメラの設定を定義しておく
-const DESKTOP_CAMERA_POSITION: [number, number, number] = [0.165, 0.33, 0.165];
+const DESKTOP_CAMERA_POSITION: [number, number, number] = [0.25, 0.18, 0.25];
 const MOBILE_CAMERA_POSITION: [number, number, number] = [0.25, 0.18, 0.25];
 const CAMERA_TARGET: [number, number, number] = [0, 0, 0];
 
@@ -109,37 +108,3 @@ export function ProductScene() {
         </Canvas>
     );
 }
-
-// ------------------------------------------
-// テスト用にキューブを表示していたコンポーネント
-// ------------------------------------------
-// function ProductCube() {
-//     const cubeRef = useRef<Mesh>(null);
-
-//     useFrame((_, delta) => {
-//         if (!cubeRef.current) {
-//             return;
-//         }
-
-//         cubeRef.current.rotation.y += delta * 0.25;
-//     });
-
-//     return (
-//         <mesh ref={cubeRef} rotation={[0.25, 0.45, 0]}>
-//             <boxGeometry args={[2, 2, 2]} />
-
-//             <meshStandardMaterial
-//                 color="#242424"
-//                 metalness={0.65}
-//                 roughness={0.28}
-//             />
-//         </mesh>
-//     );
-// }
-
-// Dialを表示するための関数
-// Dial用のコンポーネントを別で作成したので不要
-// function ProductModel() {
-//     const { scene } = useGLTF("/models/muda-dial-optimized.glb");
-//     return <primitive object={scene} position={[0, 0, 0]} scale={[1, 1, 1]} />;
-// }

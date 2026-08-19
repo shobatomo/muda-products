@@ -2,31 +2,90 @@
 
 import * as THREE from "three";
 import { useGLTF } from "@react-three/drei";
-import { useThree, type ThreeEvent } from "@react-three/fiber";
+import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 
-const ROTATION_SENSITIVITY = 0.01;
+// ダイヤルの回転設定
+const ROTATION_SENSITIVITY = 0.0028;
+const FRICTION = 5.5;
+const ROTATION_DAMPING = 12;
+const RATCHET_STEP = Math.PI / 60;
+const RATCHET_SHARPNESS = 15;
+
+/** 現在角を最も近いラチェットの歯へ引き寄せる */
+function applyRatchet(angle: number) {
+    // 現在どの歯と歯の間にいるか
+    const stepIndex = Math.floor(angle / RATCHET_STEP);
+    // その区間の開始角度
+    const stepStart = stepIndex * RATCHET_STEP;
+
+    // 0~1の範囲で、歯と歯の間のどこにいるか
+    const t = (angle - stepStart) / RATCHET_STEP;
+
+    // 歯の近くではゆっくり
+    // 中間を超えると次の歯へ一気に進む
+    const eased =
+        t < 0.5
+            ? 0.5 * Math.pow(t * 2, RATCHET_SHARPNESS)
+            : 1 - 0.5 * Math.pow((1 - t) * 2, RATCHET_SHARPNESS);
+
+    return stepStart + eased * RATCHET_STEP;
+}
 
 // Dialを表示するための関数
 export function MudaDial() {
     const { scene } = useGLTF("/models/muda-dial-optimized.glb");
     const canvas = useThree((state) => state.gl.domElement);
 
-    // Dial全体を操作するためのRefを作成
+    // 3Dオブジェクト
     const dialGroupRef = useRef<THREE.Group>(null);
-    // 操作中のポインターIDを保持するRefを作成
-    const activePointerIdRef = useRef<number | null>(null);
-    // 前回のポインターのX座標を保持するRefを作成
-    const previousPointerXRef = useRef(0);
+    const dialRef = useRef<THREE.Object3D | null>(null);
 
+    // ポインター操作
+    const activePointerIdRef = useRef<number | null>(null);
+    const previousPointerXRef = useRef(0);
+    const lastMoveTimeRef = useRef(0);
+    const isDraggingRef = useRef(false);
+
+    // 回転状態
+    const targetRotationRef = useRef(0);
+    const velocityRef = useRef(0);
+    const lastRatchetIndexRef = useRef(0);
+
+    // ポインターが押されたときにドラッグを開始する
+    const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
+        if (event.button !== 0 || activePointerIdRef.current !== null) {
+            return;
+        }
+
+        event.stopPropagation();
+        activePointerIdRef.current = event.pointerId;
+        previousPointerXRef.current = event.clientX;
+        lastMoveTimeRef.current = performance.now();
+        isDraggingRef.current = true;
+
+        // Canvas外へドラッグしてもポインターイベントを受け取る
+        canvas.setPointerCapture(event.pointerId);
+        console.log("Pointer Down", isDraggingRef.current);
+    };
+
+    // モデル内の操作対象とマテリアルを初期化する
     useEffect(() => {
+        const dial = scene.getObjectByName("CTRL_Upper") ?? null;
+        dialRef.current = dial;
+
+        if (dial) {
+            targetRotationRef.current = dial.rotation.y;
+        } else {
+            console.warn(
+                "CTRL_Upperが見つかりません。ダイヤルを回転できません。",
+            );
+        }
+
         scene.traverse((child) => {
             if (child instanceof THREE.Mesh) {
                 // 中心のチタンの質感を個別に設定
-                if (
-                    child instanceof THREE.Mesh &&
-                    child.material.name === "MAT_CenterPlate_Titanium"
-                ) {
+                if (child.material.name === "MAT_CenterPlate_Titanium") {
                     child.material.metalness = 1;
                     child.material.roughness = 0.3;
                     child.material.anisotropy = 1;
@@ -54,8 +113,13 @@ export function MudaDial() {
                 // });
             }
         });
+
+        return function clearDialReference() {
+            dialRef.current = null;
+        };
     }, [scene]);
 
+    // Canvas外で発生するドラッグイベントを監視する
     useEffect(() => {
         const finishDragging = (pointerId: number) => {
             if (activePointerIdRef.current !== pointerId) {
@@ -63,6 +127,7 @@ export function MudaDial() {
             }
 
             activePointerIdRef.current = null;
+            isDraggingRef.current = false;
 
             if (canvas.hasPointerCapture(pointerId)) {
                 canvas.releasePointerCapture(pointerId);
@@ -83,18 +148,24 @@ export function MudaDial() {
             }
 
             const deltaX = event.clientX - previousPointerXRef.current;
+            const rotationDelta = deltaX * ROTATION_SENSITIVITY;
+            const now = performance.now();
+            const deltaTime = (now - lastMoveTimeRef.current) / 1000;
 
-            if (dialGroupRef.current) {
-                dialGroupRef.current.rotation.y +=
-                    deltaX * ROTATION_SENSITIVITY;
-            }
+            targetRotationRef.current += rotationDelta;
 
             previousPointerXRef.current = event.clientX;
+
+            if (deltaTime > 0) {
+                velocityRef.current = rotationDelta / deltaTime;
+            }
+
+            lastMoveTimeRef.current = now;
         };
 
         const handlePointerUp = (event: PointerEvent) => {
             if (finishDragging(event.pointerId)) {
-                console.log("Pointer Up");
+                console.log("Pointer Up", isDraggingRef.current);
             }
         };
 
@@ -128,26 +199,46 @@ export function MudaDial() {
             }
 
             activePointerIdRef.current = null;
+            isDraggingRef.current = false;
         };
     }, [canvas]);
 
-    // ポインターが押されたときのイベントハンドラーを定義
-    const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
-        if (event.button !== 0 || activePointerIdRef.current !== null) {
-            return;
+    // 現在の回転角を毎フレーム目標角へ滑らかに近づける
+    useFrame((_, delta) => {
+        if (!dialRef.current) return;
+
+        if (!isDraggingRef.current) {
+            targetRotationRef.current += velocityRef.current * delta;
+
+            velocityRef.current = THREE.MathUtils.damp(
+                velocityRef.current,
+                0,
+                FRICTION,
+                delta,
+            );
         }
 
-        // ドラッグ中のイベントが伝播しないようにする
-        event.stopPropagation();
-        // 操作中のポインターIDを保持
-        activePointerIdRef.current = event.pointerId;
-        // ポインターのX座標を更新
-        previousPointerXRef.current = event.clientX;
-        // Canvas外へドラッグしてもポインターイベントを受け取る
-        canvas.setPointerCapture(event.pointerId);
+        const ratchetTarget = applyRatchet(targetRotationRef.current);
 
-        console.log("Pointer Down");
-    };
+        // 現在地点の歯
+        const ratchetIndex = Math.round(
+            targetRotationRef.current / RATCHET_STEP,
+        );
+
+        // 直前の歯と違う歯を現時点で跨いでいるなら
+        if (ratchetIndex !== lastRatchetIndexRef.current) {
+            lastRatchetIndexRef.current = ratchetIndex;
+
+            console.log("Click!");
+        }
+
+        dialRef.current.rotation.y = THREE.MathUtils.damp(
+            dialRef.current.rotation.y,
+            ratchetTarget,
+            ROTATION_DAMPING,
+            delta,
+        );
+    });
 
     return (
         <group
