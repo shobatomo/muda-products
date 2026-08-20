@@ -7,10 +7,13 @@ import { useEffect, useRef } from "react";
 
 // ダイヤルの回転設定
 const ROTATION_SENSITIVITY = 0.0028;
-const FRICTION = 5.5;
+const FRICTION = 15;
 const ROTATION_DAMPING = 12;
 const RATCHET_STEP = Math.PI / 60;
 const RATCHET_SHARPNESS = 15;
+const DIAL_BASE_POSITION = { x: 0, y: 0.01, z: 0 };
+const VIBRATION_DAMPING = 25;
+const VIBRATION_SPEED = 90;
 
 /** 現在角を最も近いラチェットの歯へ引き寄せる */
 function applyRatchet(angle: number) {
@@ -51,6 +54,8 @@ export function MudaDial() {
     const targetRotationRef = useRef(0);
     const velocityRef = useRef(0);
     const lastRatchetIndexRef = useRef(0);
+    const clickSoundRef = useRef<HTMLAudioElement | null>(null);
+    const vibrationRef = useRef(0);
 
     // ポインターが押されたときにドラッグを開始する
     const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
@@ -68,6 +73,18 @@ export function MudaDial() {
         canvas.setPointerCapture(event.pointerId);
         console.log("Pointer Down", isDraggingRef.current);
     };
+
+    // 音声データをRefへ格納する
+    useEffect(() => {
+        const sound = new Audio("/sounds/ratchet_sound.WAV");
+        sound.volume = 0.3;
+        clickSoundRef.current = sound;
+
+        return () => {
+            sound.pause();
+            clickSoundRef.current = null;
+        };
+    }, []);
 
     // モデル内の操作対象とマテリアルを初期化する
     useEffect(() => {
@@ -204,7 +221,7 @@ export function MudaDial() {
     }, [canvas]);
 
     // 現在の回転角を毎フレーム目標角へ滑らかに近づける
-    useFrame((_, delta) => {
+    useFrame(({ clock }, delta) => {
         if (!dialRef.current) return;
 
         if (!isDraggingRef.current) {
@@ -229,6 +246,14 @@ export function MudaDial() {
         if (ratchetIndex !== lastRatchetIndexRef.current) {
             lastRatchetIndexRef.current = ratchetIndex;
 
+            const sound = clickSoundRef.current;
+
+            if (sound) {
+                sound.currentTime = 0;
+                sound.play();
+            }
+
+            vibrationRef.current = 0.00015;
             console.log("Click!");
         }
 
@@ -238,12 +263,36 @@ export function MudaDial() {
             ROTATION_DAMPING,
             delta,
         );
+
+        const dialGroup = dialGroupRef.current;
+        const vibration = vibrationRef.current;
+
+        if (dialGroup) {
+            const phase = clock.elapsedTime * VIBRATION_SPEED;
+
+            dialGroup.position.set(
+                DIAL_BASE_POSITION.x + Math.sin(phase) * vibration,
+                DIAL_BASE_POSITION.y + Math.cos(phase * 1.17) * vibration,
+                DIAL_BASE_POSITION.z + Math.sin(phase * 0.83) * vibration * 0.5,
+            );
+        }
+
+        vibrationRef.current = THREE.MathUtils.damp(
+            vibration,
+            0,
+            VIBRATION_DAMPING,
+            delta,
+        );
     });
 
     return (
         <group
             ref={dialGroupRef}
-            position={[0, 0.01, 0]}
+            position={[
+                DIAL_BASE_POSITION.x,
+                DIAL_BASE_POSITION.y,
+                DIAL_BASE_POSITION.z,
+            ]}
             onPointerDown={handlePointerDown}
         >
             <primitive object={scene} scale={[1, 1, 1]} />
