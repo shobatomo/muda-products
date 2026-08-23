@@ -35,17 +35,15 @@ export function Hero() {
                     </a>
                 </div>
 
-                <div className="relative flex min-h-[420px] items-center justify-center overflow-hidden rounded-sm bg-[#e6e4de] lg:min-h-[680px]">
-                    <div className="relative h-[420px] overflow-hidden rounded-sm bg-[#e6e4de] lg:h-[680px] w-full">
-                        <ProductScene />
+                <div className="relative h-[420px] overflow-hidden rounded-sm bg-[#e6e4de] lg:h-[680px]">
+                    <ProductScene />
 
-                        <div className="pointer-events-none absolute left-6 top-6 z-10 text-[10px] tracking-[0.2em] text-black/40">
-                            INTERACTIVE OBJECT
-                        </div>
+                    <div className="pointer-events-none absolute left-6 top-6 z-10 text-[10px] tracking-[0.2em] text-black/40">
+                        INTERACTIVE OBJECT
+                    </div>
 
-                        <div className="pointer-events-none absolute bottom-6 right-6 z-10 text-[10px] tracking-[0.2em] text-black/40">
-                            DRAG TO ROTATE
-                        </div>
+                    <div className="pointer-events-none absolute bottom-6 right-6 z-10 text-[10px] tracking-[0.2em] text-black/40">
+                        DRAG TO ROTATE
                     </div>
                 </div>
             </div>

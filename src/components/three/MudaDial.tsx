@@ -1,11 +1,9 @@
-"use client";
-
 import * as THREE from "three";
 import { useGLTF } from "@react-three/drei";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useCallback, useEffect, useRef } from "react";
 
-// ダイヤルの回転設定
+// 操作感に関わる値をまとめ、フレームごとの計算から分離する。
 const ROTATION_SENSITIVITY = 0.0028;
 const FRICTION = 15;
 const ROTATION_DAMPING = 12;
@@ -14,28 +12,23 @@ const RATCHET_SHARPNESS = 15;
 const DIAL_BASE_POSITION = { x: 0, y: 0.01, z: 0 };
 const VIBRATION_DAMPING = 25;
 const VIBRATION_SPEED = 90;
+const HINT_DELAY = 5000;
+const HINT_DURATION = 1.2;
+const HINT_ROTATION = THREE.MathUtils.degToRad(3);
 
-/** 現在角を最も近いラチェットの歯へ引き寄せる */
+/** 歯の中央付近を速く、両端を遅くしてラチェットの引っ掛かりを再現する。 */
 function applyRatchet(angle: number) {
-    // 現在どの歯と歯の間にいるか
     const stepIndex = Math.floor(angle / RATCHET_STEP);
-    // その区間の開始角度
     const stepStart = stepIndex * RATCHET_STEP;
-
-    // 0~1の範囲で、歯と歯の間のどこにいるか
-    const t = (angle - stepStart) / RATCHET_STEP;
-
-    // 歯の近くではゆっくり
-    // 中間を超えると次の歯へ一気に進む
+    const progress = (angle - stepStart) / RATCHET_STEP;
     const eased =
-        t < 0.5
-            ? 0.5 * Math.pow(t * 2, RATCHET_SHARPNESS)
-            : 1 - 0.5 * Math.pow((1 - t) * 2, RATCHET_SHARPNESS);
+        progress < 0.5
+            ? 0.5 * (progress * 2) ** RATCHET_SHARPNESS
+            : 1 - 0.5 * ((1 - progress) * 2) ** RATCHET_SHARPNESS;
 
     return stepStart + eased * RATCHET_STEP;
 }
 
-// Dialを表示するための関数
 export function MudaDial() {
     const { scene } = useGLTF("/models/muda-dial-optimized.glb");
     const canvas = useThree((state) => state.gl.domElement);
@@ -57,17 +50,23 @@ export function MudaDial() {
     const clickSoundRef = useRef<HTMLAudioElement | null>(null);
     const hasPendingClickSoundRef = useRef(false);
     const vibrationRef = useRef(0);
+    const displayRotationRef = useRef(0);
+    const hasInteractedRef = useRef(false);
+    const idleHintPlayedRef = useRef(false);
+    const initialHintPlayedRef = useRef(false);
 
-    // シーン全体
+    // 操作がないときに、短い自動回転でドラッグ可能なことを伝える。
     const lastInteractionRef = useRef(0);
-    const hintActiveRef = useRef(true);
+    const hintActiveRef = useRef(false);
     const hintTimeRef = useRef(0);
 
     // 再生が許可されるまでは未再生状態を保持し、次のユーザー操作で再試行する
     const playClickSound = useCallback(() => {
         const sound = clickSoundRef.current;
 
-        if (!sound) return;
+        if (!sound) {
+            return;
+        }
 
         hasPendingClickSoundRef.current = true;
         sound.currentTime = 0;
@@ -96,20 +95,25 @@ export function MudaDial() {
             return;
         }
 
+        const now = performance.now();
+
         event.stopPropagation();
         activePointerIdRef.current = event.pointerId;
         previousPointerXRef.current = event.clientX;
-        lastMoveTimeRef.current = performance.now();
+        lastMoveTimeRef.current = now;
         isDraggingRef.current = true;
-        lastInteractionRef.current = performance.now();
+        lastInteractionRef.current = now;
+        hasInteractedRef.current = true;
+        idleHintPlayedRef.current = false;
+        initialHintPlayedRef.current = true;
         hintActiveRef.current = false;
+        hintTimeRef.current = 0;
 
         // Canvas外へドラッグしてもポインターイベントを受け取る
         canvas.setPointerCapture(event.pointerId);
-        console.log("クリックしました");
     };
 
-    // 音声データをRefへ格納する
+    // Audio 要素は再レンダー不要のため Ref で保持し、破棄時に再生を止める。
     useEffect(() => {
         const sound = new Audio("/sounds/ratchet_sound.WAV");
         sound.preload = "auto";
@@ -126,11 +130,13 @@ export function MudaDial() {
 
     // モデル内の操作対象とマテリアルを初期化する
     useEffect(() => {
+        lastInteractionRef.current = performance.now();
         const dial = scene.getObjectByName("CTRL_Upper") ?? null;
         dialRef.current = dial;
 
         if (dial) {
             targetRotationRef.current = dial.rotation.y;
+            displayRotationRef.current = dial.rotation.y;
         } else {
             console.warn(
                 "CTRL_Upperが見つかりません。ダイヤルを回転できません。",
@@ -138,35 +144,28 @@ export function MudaDial() {
         }
 
         scene.traverse((child) => {
-            if (child instanceof THREE.Mesh) {
-                // 中心のチタンの質感を個別に設定
-                if (child.material.name === "MAT_CenterPlate_Titanium") {
-                    child.material.metalness = 1;
-                    child.material.roughness = 0.3;
-                    child.material.anisotropy = 1;
-                    child.material.anisotropyRotation = 0;
-                }
-
-                // 内容物の情報をコンソールに出力：確認用
-                // const materials = Array.isArray(child.material)
-                //     ? child.material
-                //     : [child.material];
-
-                // materials.forEach((material) => {
-                //     console.log({
-                //         mesh: child.name,
-                //         material: material.name,
-                //         type: material.type,
-                //         roughness: material.roughness,
-                //         metalness: material.metalness,
-                //         roughnessMap: material.roughnessMap,
-                //         normalMap: material.normalMap,
-                //         anisotropy: material.anisotropy,
-                //         anisotropyMap: material.anisotropyMap,
-                //         anisotropyRotation: material.anisotropyRotation,
-                //     });
-                // });
+            if (!(child instanceof THREE.Mesh)) {
+                return;
             }
+
+            const materials = Array.isArray(child.material)
+                ? child.material
+                : [child.material];
+            const centerPlateMaterial = materials.find(
+                (material) =>
+                    material.name === "MAT_CenterPlate_Titanium" &&
+                    material instanceof THREE.MeshStandardMaterial,
+            );
+
+            if (!centerPlateMaterial) {
+                return;
+            }
+
+            // 中央プレートだけ金属の異方性を強め、加工されたチタンの質感にする。
+            centerPlateMaterial.metalness = 1;
+            centerPlateMaterial.roughness = 0.3;
+            centerPlateMaterial.anisotropy = 1;
+            centerPlateMaterial.anisotropyRotation = 0;
         });
 
         return function clearDialReference() {
@@ -207,6 +206,8 @@ export function MudaDial() {
             const now = performance.now();
             const deltaTime = (now - lastMoveTimeRef.current) / 1000;
 
+            lastInteractionRef.current = now;
+
             targetRotationRef.current += rotationDelta;
 
             previousPointerXRef.current = event.clientX;
@@ -226,7 +227,7 @@ export function MudaDial() {
                     playClickSound();
                 }
 
-                console.log("Pointer Up", isDraggingRef.current);
+                lastInteractionRef.current = performance.now();
             }
         };
 
@@ -264,10 +265,15 @@ export function MudaDial() {
         };
     }, [canvas, playClickSound]);
 
-    // 現在の回転角を毎フレーム目標角へ滑らかに近づける
+    // 慣性、ラチェット、操作ヒント、振動を毎フレーム合成して表示へ反映する。
     useFrame(({ clock }, delta) => {
-        if (!dialRef.current) return;
+        const dial = dialRef.current;
 
+        if (!dial) {
+            return;
+        }
+
+        // ドラッグ終了後は速度を減衰させながら慣性回転させる。
         if (!isDraggingRef.current) {
             targetRotationRef.current += velocityRef.current * delta;
 
@@ -281,27 +287,62 @@ export function MudaDial() {
 
         const ratchetTarget = applyRatchet(targetRotationRef.current);
 
-        // 現在地点の歯
         const ratchetIndex = Math.round(
             targetRotationRef.current / RATCHET_STEP,
         );
 
-        // 直前の歯と違う歯を現時点で跨いでいるなら
+        // 歯をまたいだ瞬間だけクリック音と小さな振動を発生させる。
         if (ratchetIndex !== lastRatchetIndexRef.current) {
             lastRatchetIndexRef.current = ratchetIndex;
-
             playClickSound();
-
             vibrationRef.current = 0.00015;
-            console.log("Click!");
         }
 
-        dialRef.current.rotation.y = THREE.MathUtils.damp(
-            dialRef.current.rotation.y,
+        const now = performance.now();
+        const isHintDue =
+            !isDraggingRef.current &&
+            !hintActiveRef.current &&
+            now - lastInteractionRef.current > HINT_DELAY &&
+            ((!hasInteractedRef.current && !initialHintPlayedRef.current) ||
+                (hasInteractedRef.current && !idleHintPlayedRef.current));
+
+        if (isHintDue) {
+            hintActiveRef.current = true;
+            hintTimeRef.current = 0;
+
+            if (hasInteractedRef.current) {
+                idleHintPlayedRef.current = true;
+            } else {
+                initialHintPlayedRef.current = true;
+            }
+        }
+
+        let hintRotation = 0;
+
+        if (hintActiveRef.current) {
+            hintTimeRef.current += delta;
+
+            const progress = Math.min(hintTimeRef.current / HINT_DURATION, 1);
+            const wave = Math.sin(progress * Math.PI * 2);
+            const envelope = Math.sin(progress * Math.PI);
+
+            hintRotation = wave * envelope * HINT_ROTATION;
+
+            if (progress >= 1) {
+                hintActiveRef.current = false;
+                hintTimeRef.current = 0;
+                hintRotation = 0;
+            }
+        }
+
+        displayRotationRef.current = THREE.MathUtils.damp(
+            displayRotationRef.current,
             ratchetTarget,
             ROTATION_DAMPING,
             delta,
         );
+
+        dial.rotation.y = displayRotationRef.current + hintRotation;
 
         const dialGroup = dialGroupRef.current;
         const vibration = vibrationRef.current;
@@ -322,17 +363,6 @@ export function MudaDial() {
             VIBRATION_DAMPING,
             delta,
         );
-
-        const now = performance.now();
-
-        if (
-            !isDraggingRef.current &&
-            now - lastInteractionRef.current > 5000 &&
-            !hintActiveRef.current
-        ) {
-            hintActiveRef.current = true;
-            hintTimeRef.current = 0;
-        }
     });
 
     return (
@@ -345,7 +375,7 @@ export function MudaDial() {
             ]}
             onPointerDown={handlePointerDown}
         >
-            <primitive object={scene} scale={[1, 1, 1]} />
+            <primitive object={scene} />
         </group>
     );
 }

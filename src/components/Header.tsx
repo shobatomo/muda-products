@@ -21,7 +21,6 @@ export function Header() {
                                 COLLECTION
                             </a>
                         </li>
-
                         <li>
                             <button
                                 type="button"
