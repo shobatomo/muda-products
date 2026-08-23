@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { useGLTF } from "@react-three/drei";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 // ダイヤルの回転設定
 const ROTATION_SENSITIVITY = 0.0028;
@@ -55,7 +55,40 @@ export function MudaDial() {
     const velocityRef = useRef(0);
     const lastRatchetIndexRef = useRef(0);
     const clickSoundRef = useRef<HTMLAudioElement | null>(null);
+    const hasPendingClickSoundRef = useRef(false);
     const vibrationRef = useRef(0);
+
+    // シーン全体
+    const lastInteractionRef = useRef(0);
+    const hintActiveRef = useRef(true);
+    const hintTimeRef = useRef(0);
+
+    // 再生が許可されるまでは未再生状態を保持し、次のユーザー操作で再試行する
+    const playClickSound = useCallback(() => {
+        const sound = clickSoundRef.current;
+
+        if (!sound) return;
+
+        hasPendingClickSoundRef.current = true;
+        sound.currentTime = 0;
+
+        void sound
+            .play()
+            .then(() => {
+                hasPendingClickSoundRef.current = false;
+            })
+            .catch((error: unknown) => {
+                if (
+                    error instanceof DOMException &&
+                    (error.name === "NotAllowedError" ||
+                        error.name === "AbortError")
+                ) {
+                    return;
+                }
+
+                console.warn("ラチェット音を再生できませんでした。", error);
+            });
+    }, []);
 
     // ポインターが押されたときにドラッグを開始する
     const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
@@ -68,21 +101,26 @@ export function MudaDial() {
         previousPointerXRef.current = event.clientX;
         lastMoveTimeRef.current = performance.now();
         isDraggingRef.current = true;
+        lastInteractionRef.current = performance.now();
+        hintActiveRef.current = false;
 
         // Canvas外へドラッグしてもポインターイベントを受け取る
         canvas.setPointerCapture(event.pointerId);
-        console.log("Pointer Down", isDraggingRef.current);
+        console.log("クリックしました");
     };
 
     // 音声データをRefへ格納する
     useEffect(() => {
         const sound = new Audio("/sounds/ratchet_sound.WAV");
+        sound.preload = "auto";
         sound.volume = 0.3;
         clickSoundRef.current = sound;
+        sound.load();
 
         return () => {
             sound.pause();
             clickSoundRef.current = null;
+            hasPendingClickSoundRef.current = false;
         };
     }, []);
 
@@ -182,6 +220,12 @@ export function MudaDial() {
 
         const handlePointerUp = (event: PointerEvent) => {
             if (finishDragging(event.pointerId)) {
+                // タッチ操作はpointerupでユーザー操作として確定するため、
+                // 初回ドラッグ中にブロックされた音をこの同期処理内で再試行する
+                if (hasPendingClickSoundRef.current) {
+                    playClickSound();
+                }
+
                 console.log("Pointer Up", isDraggingRef.current);
             }
         };
@@ -218,7 +262,7 @@ export function MudaDial() {
             activePointerIdRef.current = null;
             isDraggingRef.current = false;
         };
-    }, [canvas]);
+    }, [canvas, playClickSound]);
 
     // 現在の回転角を毎フレーム目標角へ滑らかに近づける
     useFrame(({ clock }, delta) => {
@@ -246,12 +290,7 @@ export function MudaDial() {
         if (ratchetIndex !== lastRatchetIndexRef.current) {
             lastRatchetIndexRef.current = ratchetIndex;
 
-            const sound = clickSoundRef.current;
-
-            if (sound) {
-                sound.currentTime = 0;
-                sound.play();
-            }
+            playClickSound();
 
             vibrationRef.current = 0.00015;
             console.log("Click!");
@@ -283,6 +322,17 @@ export function MudaDial() {
             VIBRATION_DAMPING,
             delta,
         );
+
+        const now = performance.now();
+
+        if (
+            !isDraggingRef.current &&
+            now - lastInteractionRef.current > 5000 &&
+            !hintActiveRef.current
+        ) {
+            hintActiveRef.current = true;
+            hintTimeRef.current = 0;
+        }
     });
 
     return (
