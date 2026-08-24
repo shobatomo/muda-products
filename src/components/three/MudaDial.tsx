@@ -15,6 +15,25 @@ const VIBRATION_SPEED = 90;
 const HINT_DELAY = 5000;
 const HINT_DURATION = 1.2;
 const HINT_ROTATION = THREE.MathUtils.degToRad(3);
+const OUTLINE_LAYERS = [
+    { scale: 1.02, opacity: 0.25 },
+    { scale: 1.029, opacity: 0.18 },
+    { scale: 1.036, opacity: 0.1 },
+    { scale: 1.045, opacity: 0.06 },
+];
+
+type OutlineLayer = {
+    mesh: THREE.Mesh;
+    material: THREE.MeshBasicMaterial;
+    baseOpacity: number;
+};
+
+function disposeOutlineLayers(layers: OutlineLayer[]) {
+    layers.forEach(({ mesh, material }) => {
+        mesh.removeFromParent();
+        material.dispose();
+    });
+}
 
 /** 歯の中央付近を速く、両端を遅くしてラチェットの引っ掛かりを再現する。 */
 function applyRatchet(angle: number) {
@@ -36,6 +55,7 @@ export function MudaDial() {
     // 3Dオブジェクト
     const dialGroupRef = useRef<THREE.Group>(null);
     const dialRef = useRef<THREE.Object3D | null>(null);
+    const outlineLayersRef = useRef<OutlineLayer[]>([]);
 
     // ポインター操作
     const activePointerIdRef = useRef<number | null>(null);
@@ -57,7 +77,7 @@ export function MudaDial() {
 
     // 操作がないときに、短い自動回転でドラッグ可能なことを伝える。
     const lastInteractionRef = useRef(0);
-    const hintActiveRef = useRef(false);
+    const hintActiveRef = useRef(true);
     const hintTimeRef = useRef(0);
 
     // 再生が許可されるまでは未再生状態を保持し、次のユーザー操作で再試行する
@@ -108,6 +128,9 @@ export function MudaDial() {
         initialHintPlayedRef.current = true;
         hintActiveRef.current = false;
         hintTimeRef.current = 0;
+        outlineLayersRef.current.forEach(({ material }) => {
+            material.opacity = 0;
+        });
 
         // Canvas外へドラッグしてもポインターイベントを受け取る
         canvas.setPointerCapture(event.pointerId);
@@ -132,6 +155,61 @@ export function MudaDial() {
     useEffect(() => {
         lastInteractionRef.current = performance.now();
         const dial = scene.getObjectByName("CTRL_Upper") ?? null;
+        const outerMesh = scene.getObjectByName("BodyShell");
+        const createdOutlineLayers: OutlineLayer[] = [];
+
+        // Fast RefreshなどでEffectが再実行された場合も、前回の生成物を残さない。
+        disposeOutlineLayers(outlineLayersRef.current);
+        outlineLayersRef.current = [];
+
+        if (!(outerMesh instanceof THREE.Mesh)) {
+            console.warn("ダイヤル外周のMeshが見つかりませんでした");
+        }
+
+        if (outerMesh instanceof THREE.Mesh) {
+            OUTLINE_LAYERS.forEach(({ scale, opacity: baseOpacity }) => {
+                const material = new THREE.MeshBasicMaterial({
+                    color: 0xaaff00,
+                    side: THREE.BackSide,
+                    transparent: true,
+                    opacity: 0,
+                    depthWrite: false,
+                    toneMapped: false,
+                });
+
+                const outline = new THREE.Mesh(outerMesh.geometry, material);
+
+                outline.position.copy(outerMesh.position);
+                outline.rotation.copy(outerMesh.rotation);
+                outline.scale.copy(outerMesh.scale);
+
+                outline.scale.multiplyScalar(scale);
+
+                outerMesh.parent?.add(outline);
+
+                createdOutlineLayers.push({
+                    mesh: outline,
+                    material,
+                    baseOpacity,
+                });
+            });
+        }
+
+        outlineLayersRef.current = createdOutlineLayers;
+
+        // dial?.traverse((child) => {
+        //     if (child instanceof THREE.Mesh) {
+        //         const materials = Array.isArray(child.material)
+        //             ? child.material
+        //             : [child.material];
+
+        //         console.log({
+        //             mesh: child.name,
+        //             materials: materials.map((material) => material.name),
+        //         });
+        //     }
+        // });
+
         dialRef.current = dial;
 
         if (dial) {
@@ -169,6 +247,12 @@ export function MudaDial() {
         });
 
         return function clearDialReference() {
+            disposeOutlineLayers(createdOutlineLayers);
+
+            if (outlineLayersRef.current === createdOutlineLayers) {
+                outlineLayersRef.current = [];
+            }
+
             dialRef.current = null;
         };
     }, [scene]);
@@ -328,10 +412,19 @@ export function MudaDial() {
 
             hintRotation = wave * envelope * HINT_ROTATION;
 
+            // アウトライン発光処理
+            outlineLayersRef.current.forEach(({ material, baseOpacity }) => {
+                material.opacity = baseOpacity * envelope;
+            });
+
             if (progress >= 1) {
                 hintActiveRef.current = false;
                 hintTimeRef.current = 0;
                 hintRotation = 0;
+
+                outlineLayersRef.current.forEach(({ material }) => {
+                    material.opacity = 0;
+                });
             }
         }
 
