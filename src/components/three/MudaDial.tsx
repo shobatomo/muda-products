@@ -13,6 +13,7 @@ const DIAL_BASE_POSITION = { x: 0, y: 0.01, z: 0 };
 const VIBRATION_DAMPING = 25;
 const VIBRATION_SPEED = 90;
 const HINT_DELAY = 5000;
+const INITIAL_HINT_DELAYS = [750, 5000];
 const HINT_DURATION = 1.2;
 const HINT_ROTATION = THREE.MathUtils.degToRad(3);
 const OUTLINE_LAYERS = [
@@ -73,11 +74,12 @@ export function MudaDial() {
     const displayRotationRef = useRef(0);
     const hasInteractedRef = useRef(false);
     const idleHintPlayedRef = useRef(false);
-    const initialHintPlayedRef = useRef(false);
+    const initialHintIndexRef = useRef(0);
+    const initialHintStartedAtRef = useRef<number | null>(null);
 
     // 操作がないときに、短い自動回転でドラッグ可能なことを伝える。
     const lastInteractionRef = useRef(0);
-    const hintActiveRef = useRef(true);
+    const hintActiveRef = useRef(false);
     const hintTimeRef = useRef(0);
 
     // 再生が許可されるまでは未再生状態を保持し、次のユーザー操作で再試行する
@@ -125,7 +127,7 @@ export function MudaDial() {
         lastInteractionRef.current = now;
         hasInteractedRef.current = true;
         idleHintPlayedRef.current = false;
-        initialHintPlayedRef.current = true;
+        initialHintIndexRef.current = INITIAL_HINT_DELAYS.length;
         hintActiveRef.current = false;
         hintTimeRef.current = 0;
         outlineLayersRef.current.forEach(({ material }) => {
@@ -153,7 +155,10 @@ export function MudaDial() {
 
     // モデル内の操作対象とマテリアルを初期化する
     useEffect(() => {
-        lastInteractionRef.current = performance.now();
+        const initializedAt = performance.now();
+
+        lastInteractionRef.current = initializedAt;
+        initialHintStartedAtRef.current = initializedAt;
         const dial = scene.getObjectByName("CTRL_Upper") ?? null;
         const outerMesh = scene.getObjectByName("BodyShell");
         const createdOutlineLayers: OutlineLayer[] = [];
@@ -383,21 +388,29 @@ export function MudaDial() {
         }
 
         const now = performance.now();
-        const isHintDue =
+        const initialHintStartedAt = initialHintStartedAtRef.current;
+        const isInitialHintDue =
+            !hasInteractedRef.current &&
+            !hintActiveRef.current &&
+            initialHintStartedAt !== null &&
+            initialHintIndexRef.current < INITIAL_HINT_DELAYS.length &&
+            now - initialHintStartedAt >=
+                INITIAL_HINT_DELAYS[initialHintIndexRef.current];
+        const isIdleHintDue =
             !isDraggingRef.current &&
             !hintActiveRef.current &&
+            hasInteractedRef.current &&
             now - lastInteractionRef.current > HINT_DELAY &&
-            ((!hasInteractedRef.current && !initialHintPlayedRef.current) ||
-                (hasInteractedRef.current && !idleHintPlayedRef.current));
+            !idleHintPlayedRef.current;
 
-        if (isHintDue) {
+        if (isInitialHintDue || isIdleHintDue) {
             hintActiveRef.current = true;
             hintTimeRef.current = 0;
 
-            if (hasInteractedRef.current) {
+            if (isIdleHintDue) {
                 idleHintPlayedRef.current = true;
             } else {
-                initialHintPlayedRef.current = true;
+                initialHintIndexRef.current += 1;
             }
         }
 

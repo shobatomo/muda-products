@@ -1,11 +1,9 @@
-import { Header } from "@/components/Header";
-import { Hero } from "@/components/Hero";
+import { PageIntro } from "@/components/PageIntro";
 
 export default function Home() {
     return (
         <main>
-            <Header />
-            <Hero />
+            <PageIntro />
         </main>
     );
 }
