@@ -22,6 +22,7 @@ const OUTLINE_LAYERS = [
     { scale: 1.036, opacity: 0.1 },
     { scale: 1.045, opacity: 0.06 },
 ];
+const GESTURE_THRESHOLD = 6;
 
 type OutlineLayer = {
     mesh: THREE.Mesh;
@@ -63,6 +64,9 @@ export function MudaDial() {
     const previousPointerXRef = useRef(0);
     const lastMoveTimeRef = useRef(0);
     const isDraggingRef = useRef(false);
+    const gestureAxisRef = useRef<"horizontal" | "vertical" | null>(null);
+    const pointerDownXRef = useRef(0);
+    const pointerDownYRef = useRef(0);
 
     // 回転状態
     const targetRotationRef = useRef(0);
@@ -133,6 +137,9 @@ export function MudaDial() {
         outlineLayersRef.current.forEach(({ material }) => {
             material.opacity = 0;
         });
+        gestureAxisRef.current = null;
+        pointerDownXRef.current = event.clientX;
+        pointerDownYRef.current = event.clientY;
 
         // Canvas外へドラッグしてもポインターイベントを受け取る
         canvas.setPointerCapture(event.pointerId);
@@ -287,6 +294,32 @@ export function MudaDial() {
             // pointerupを取りこぼした場合でも、ボタンが離れていれば終了する
             if (event.pointerType === "mouse" && (event.buttons & 1) === 0) {
                 finishDragging(event.pointerId);
+                return;
+            }
+            const gestureDeltaX = event.clientX - pointerDownXRef.current;
+            const gestureDeltaY = event.clientY - pointerDownYRef.current;
+
+            if (gestureAxisRef.current === null) {
+                const absX = Math.abs(gestureDeltaX);
+                const absY = Math.abs(gestureDeltaY);
+
+                if (
+                    Math.hypot(gestureDeltaX, gestureDeltaY) < GESTURE_THRESHOLD
+                ) {
+                    return;
+                }
+
+                if (absX > absY) {
+                    gestureAxisRef.current = "horizontal";
+                    console.log("horizontal");
+                } else {
+                    gestureAxisRef.current = "vertical";
+                    console.log("vertical");
+                }
+            }
+
+            if (gestureAxisRef.current === "vertical") {
+                velocityRef.current = 0;
                 return;
             }
 

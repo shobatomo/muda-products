@@ -27,7 +27,7 @@ export function ProductScene() {
                 fov: 28,
             }}
             dpr={[1, 1.5]}
-            style={{ touchAction: "none" }}
+            style={{ touchAction: "pan-y" }}
             gl={{
                 toneMappingExposure: 0.4,
             }}
