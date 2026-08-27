@@ -16,6 +16,10 @@ const HINT_DELAY = 5000;
 const INITIAL_HINT_DELAYS = [1000, 8000];
 const HINT_DURATION = 1.2;
 const HINT_ROTATION = THREE.MathUtils.degToRad(3);
+const MAX_RATCHET_CLICKS_PER_FRAME = 4;
+const MAX_PENDING_RATCHET_CLICKS = 8;
+const RATCHET_CLICK_SPACING = 0.009;
+const MAX_ANIMATION_DELTA = 1 / 30;
 const OUTLINE_LAYERS = [
     { scale: 1.02, opacity: 0.25 },
     { scale: 1.029, opacity: 0.18 },
@@ -35,6 +39,54 @@ function disposeOutlineLayers(layers: OutlineLayer[]) {
         mesh.removeFromParent();
         material.dispose();
     });
+}
+
+function playBufferedClick(
+    context: AudioContext,
+    buffer: AudioBuffer,
+    startAt: number,
+) {
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+
+    source.buffer = buffer;
+    gain.gain.value = 0.3;
+    source.connect(gain);
+    gain.connect(context.destination);
+    source.addEventListener(
+        "ended",
+        () => {
+            source.disconnect();
+            gain.disconnect();
+        },
+        { once: true },
+    );
+    source.start(startAt);
+}
+
+// 音声データの準備前でも、初回操作を無音にしないための短い機械音。
+function playFallbackClick(context: AudioContext, startAt: number) {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const endsAt = startAt + 0.022;
+
+    oscillator.type = "square";
+    oscillator.frequency.setValueAtTime(1400, startAt);
+    oscillator.frequency.exponentialRampToValueAtTime(520, endsAt);
+    gain.gain.setValueAtTime(0.045, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.0001, endsAt);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.addEventListener(
+        "ended",
+        () => {
+            oscillator.disconnect();
+            gain.disconnect();
+        },
+        { once: true },
+    );
+    oscillator.start(startAt);
+    oscillator.stop(endsAt);
 }
 
 /** 歯の中央付近を速く、両端を遅くしてラチェットの引っ掛かりを再現する。 */
@@ -72,8 +124,11 @@ export function MudaDial() {
     const targetRotationRef = useRef(0);
     const velocityRef = useRef(0);
     const lastRatchetIndexRef = useRef(0);
-    const clickSoundRef = useRef<HTMLAudioElement | null>(null);
-    const hasPendingClickSoundRef = useRef(false);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const clickSoundDataRef = useRef<ArrayBuffer | null>(null);
+    const clickSoundBufferRef = useRef<AudioBuffer | null>(null);
+    const clickSoundDecodeRef = useRef<Promise<AudioBuffer> | null>(null);
+    const pendingClickCountRef = useRef(0);
     const vibrationRef = useRef(0);
     const displayRotationRef = useRef(0);
     const hasInteractedRef = useRef(false);
@@ -86,34 +141,115 @@ export function MudaDial() {
     const hintActiveRef = useRef(false);
     const hintTimeRef = useRef(0);
 
-    // 再生が許可されるまでは未再生状態を保持し、次のユーザー操作で再試行する
-    const playClickSound = useCallback(() => {
-        const sound = clickSoundRef.current;
+    // 読み込み済みの効果音を、同時発音できる短いAudioBufferSourceとして再生する。
+    const playClickSound = useCallback((clickCount = 1) => {
+        const context = audioContextRef.current;
 
-        if (!sound) {
+        if (!context || context.state !== "running") {
+            pendingClickCountRef.current = Math.min(
+                pendingClickCountRef.current + clickCount,
+                MAX_PENDING_RATCHET_CLICKS,
+            );
             return;
         }
 
-        hasPendingClickSoundRef.current = true;
-        sound.currentTime = 0;
+        const bufferedClickCount = Math.min(
+            pendingClickCountRef.current + clickCount,
+            MAX_PENDING_RATCHET_CLICKS,
+        );
 
-        void sound
-            .play()
-            .then(() => {
-                hasPendingClickSoundRef.current = false;
-            })
-            .catch((error: unknown) => {
-                if (
-                    error instanceof DOMException &&
-                    (error.name === "NotAllowedError" ||
-                        error.name === "AbortError")
-                ) {
-                    return;
+        if (bufferedClickCount <= 0) {
+            return;
+        }
+
+        pendingClickCountRef.current = 0;
+
+        const buffer = clickSoundBufferRef.current;
+        const startsAt = context.currentTime;
+
+        for (let index = 0; index < bufferedClickCount; index += 1) {
+            const clickStartsAt = startsAt + index * RATCHET_CLICK_SPACING;
+
+            if (buffer) {
+                playBufferedClick(context, buffer, clickStartsAt);
+            } else {
+                playFallbackClick(context, clickStartsAt);
+            }
+        }
+    }, []);
+
+    const prepareClickSound = useCallback((context: AudioContext) => {
+        if (clickSoundBufferRef.current) {
+            return Promise.resolve(clickSoundBufferRef.current);
+        }
+
+        if (clickSoundDecodeRef.current) {
+            return clickSoundDecodeRef.current;
+        }
+
+        const soundData = clickSoundDataRef.current;
+
+        if (!soundData) {
+            return null;
+        }
+
+        const decodePromise = context
+            .decodeAudioData(soundData.slice(0))
+            .then((buffer) => {
+                if (audioContextRef.current === context) {
+                    clickSoundBufferRef.current = buffer;
                 }
 
-                console.warn("ラチェット音を再生できませんでした。", error);
+                return buffer;
+            })
+            .finally(() => {
+                if (audioContextRef.current === context) {
+                    clickSoundDecodeRef.current = null;
+                }
             });
+
+        clickSoundDecodeRef.current = decodePromise;
+
+        return decodePromise;
     }, []);
+
+    // スマホの自動再生制限を解除するため、pointerイベント内で直接開始する。
+    const unlockClickSound = useCallback(() => {
+        let context = audioContextRef.current;
+
+        if (!context || context.state === "closed") {
+            context = new AudioContext();
+            audioContextRef.current = context;
+            clickSoundBufferRef.current = null;
+            clickSoundDecodeRef.current = null;
+        }
+
+        const preparation = prepareClickSound(context);
+        const playPendingSound = () => {
+            if (pendingClickCountRef.current > 0) {
+                playClickSound(0);
+            }
+        };
+
+        if (context.state !== "running") {
+            void context
+                .resume()
+                .then(playPendingSound)
+                .catch((error: unknown) => {
+                    console.warn("ラチェット音を有効にできませんでした。", error);
+                });
+        } else {
+            playPendingSound();
+        }
+
+        if (preparation) {
+            void preparation
+                .then(playPendingSound)
+                .catch((error: unknown) => {
+                    console.warn("ラチェット音を読み込めませんでした。", error);
+                });
+        }
+    }, [playClickSound, prepareClickSound]);
 
     // ポインターが押されたときにドラッグを開始する
     const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
@@ -124,6 +260,7 @@ export function MudaDial() {
         const now = performance.now();
 
         event.stopPropagation();
+        unlockClickSound();
         activePointerIdRef.current = event.pointerId;
         previousPointerXRef.current = event.clientX;
         lastMoveTimeRef.current = now;
@@ -145,20 +282,70 @@ export function MudaDial() {
         canvas.setPointerCapture(event.pointerId);
     };
 
-    // Audio 要素は再レンダー不要のため Ref で保持し、破棄時に再生を止める。
+    // 音声データだけ先読みし、AudioContext自体は最初のユーザー操作内で生成する。
     useEffect(() => {
-        const sound = new Audio("/sounds/ratchet_sound.WAV");
-        sound.preload = "auto";
-        sound.volume = 0.3;
-        clickSoundRef.current = sound;
-        sound.load();
+        const controller = new AbortController();
+
+        void fetch("/sounds/ratchet_sound.WAV", {
+            signal: controller.signal,
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error(`効果音の取得に失敗しました: ${response.status}`);
+                }
+
+                return response.arrayBuffer();
+            })
+            .then((soundData) => {
+                clickSoundDataRef.current = soundData;
+
+                const context = audioContextRef.current;
+
+                if (!context || context.state === "closed") {
+                    return;
+                }
+
+                const preparation = prepareClickSound(context);
+
+                if (preparation) {
+                    void preparation
+                        .then(() => {
+                            if (pendingClickCountRef.current > 0) {
+                                playClickSound(0);
+                            }
+                        })
+                        .catch((error: unknown) => {
+                            console.warn(
+                                "ラチェット音を読み込めませんでした。",
+                                error,
+                            );
+                        });
+                }
+            })
+            .catch((error: unknown) => {
+                if (error instanceof DOMException && error.name === "AbortError") {
+                    return;
+                }
+
+                console.warn("ラチェット音を取得できませんでした。", error);
+            });
 
         return () => {
-            sound.pause();
-            clickSoundRef.current = null;
-            hasPendingClickSoundRef.current = false;
+            controller.abort();
+
+            const context = audioContextRef.current;
+
+            if (context && context.state !== "closed") {
+                void context.close();
+            }
+
+            audioContextRef.current = null;
+            clickSoundDataRef.current = null;
+            clickSoundBufferRef.current = null;
+            clickSoundDecodeRef.current = null;
+            pendingClickCountRef.current = 0;
         };
-    }, []);
+    }, [playClickSound, prepareClickSound]);
 
     // モデル内の操作対象とマテリアルを初期化する
     useEffect(() => {
@@ -343,11 +530,8 @@ export function MudaDial() {
 
         const handlePointerUp = (event: PointerEvent) => {
             if (finishDragging(event.pointerId)) {
-                // タッチ操作はpointerupでユーザー操作として確定するため、
-                // 初回ドラッグ中にブロックされた音をこの同期処理内で再試行する
-                if (hasPendingClickSoundRef.current) {
-                    playClickSound();
-                }
+                // iOS Safariなど、touchのpointerupをユーザー操作と判定する環境でも再開する。
+                unlockClickSound();
 
                 lastInteractionRef.current = performance.now();
             }
@@ -363,18 +547,33 @@ export function MudaDial() {
             if (pointerId !== null) {
                 finishDragging(pointerId);
             }
+
+            velocityRef.current = 0;
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                handleWindowBlur();
+            }
         };
 
         window.addEventListener("pointermove", handlePointerMove);
         window.addEventListener("pointerup", handlePointerUp);
         window.addEventListener("pointercancel", handlePointerCancel);
         window.addEventListener("blur", handleWindowBlur);
+        window.addEventListener("pagehide", handleWindowBlur);
+        document.addEventListener("visibilitychange", handleVisibilityChange);
 
         return () => {
             window.removeEventListener("pointermove", handlePointerMove);
             window.removeEventListener("pointerup", handlePointerUp);
             window.removeEventListener("pointercancel", handlePointerCancel);
             window.removeEventListener("blur", handleWindowBlur);
+            window.removeEventListener("pagehide", handleWindowBlur);
+            document.removeEventListener(
+                "visibilitychange",
+                handleVisibilityChange,
+            );
 
             const pointerId = activePointerIdRef.current;
 
@@ -385,7 +584,7 @@ export function MudaDial() {
             activePointerIdRef.current = null;
             isDraggingRef.current = false;
         };
-    }, [canvas, playClickSound]);
+    }, [canvas, unlockClickSound]);
 
     // 慣性、ラチェット、操作ヒント、振動を毎フレーム合成して表示へ反映する。
     useFrame(({ clock }, delta) => {
@@ -395,15 +594,18 @@ export function MudaDial() {
             return;
         }
 
+        // バックグラウンド復帰直後の巨大なdeltaによる回転・音の暴発を防ぐ。
+        const animationDelta = Math.min(delta, MAX_ANIMATION_DELTA);
+
         // ドラッグ終了後は速度を減衰させながら慣性回転させる。
         if (!isDraggingRef.current) {
-            targetRotationRef.current += velocityRef.current * delta;
+            targetRotationRef.current += velocityRef.current * animationDelta;
 
             velocityRef.current = THREE.MathUtils.damp(
                 velocityRef.current,
                 0,
                 FRICTION,
-                delta,
+                animationDelta,
             );
         }
 
@@ -415,8 +617,13 @@ export function MudaDial() {
 
         // 歯をまたいだ瞬間だけクリック音と小さな振動を発生させる。
         if (ratchetIndex !== lastRatchetIndexRef.current) {
+            const crossedStepCount = Math.min(
+                Math.abs(ratchetIndex - lastRatchetIndexRef.current),
+                MAX_RATCHET_CLICKS_PER_FRAME,
+            );
+
             lastRatchetIndexRef.current = ratchetIndex;
-            playClickSound();
+            playClickSound(crossedStepCount);
             vibrationRef.current = 0.00015;
         }
 
@@ -450,7 +657,7 @@ export function MudaDial() {
         let hintRotation = 0;
 
         if (hintActiveRef.current) {
-            hintTimeRef.current += delta;
+            hintTimeRef.current += animationDelta;
 
             const progress = Math.min(hintTimeRef.current / HINT_DURATION, 1);
             const wave = Math.sin(progress * Math.PI * 2);
@@ -478,7 +685,7 @@ export function MudaDial() {
             displayRotationRef.current,
             ratchetTarget,
             ROTATION_DAMPING,
-            delta,
+            animationDelta,
         );
 
         dial.rotation.y = displayRotationRef.current + hintRotation;
@@ -500,7 +707,7 @@ export function MudaDial() {
             vibration,
             0,
             VIBRATION_DAMPING,
-            delta,
+            animationDelta,
         );
     });
 
