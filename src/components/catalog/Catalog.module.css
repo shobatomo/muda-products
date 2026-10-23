@@ -1,0 +1,45 @@
+.shell { min-height: 100svh; background: #fff; color: #202020; }
+.header { height: 96px; display: flex; align-items: center; justify-content: space-between; max-width: 1440px; margin: auto; padding: 0 64px; border-bottom: 1px solid #ededed; }
+.brand { font-size: 15px; font-weight: 500; letter-spacing: .18em; text-decoration: none; }
+.nav { display: flex; gap: 34px; font-size: 11px; letter-spacing: .12em; }
+.nav a { text-decoration: none; }
+.content { max-width: 1440px; margin: auto; padding: 68px 64px 100px; }
+.heading { font-size: clamp(26px, 3vw, 38px); font-weight: 400; letter-spacing: .08em; margin: 0 0 44px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 36px; list-style: none; margin: 0; padding: 0; }
+.card { display: block; text-decoration: none; }
+.image { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; background: #fff; }
+.cardName { font-size: 14px; font-weight: 400; letter-spacing: .13em; margin: 22px 0 0; }
+.footer { max-width: 1440px; margin: auto; padding: 28px 64px; border-top: 1px solid #ededed; font-size: 11px; color: #666; line-height: 1.9; }
+.breadcrumb { display: flex; gap: 12px; font-size: 11px; color: #686868; margin-bottom: 36px; letter-spacing: .08em; }
+.breadcrumb a { text-decoration: none; }
+.detail { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .8fr); gap: 72px; align-items: start; }
+.media { position: relative; }
+.touch { position: absolute; top: 24px; right: 24px; border: 1px solid #d6d6d6; border-radius: 999px; background: #fff; color: #222; min-height: 46px; padding: 0 24px; font: inherit; font-size: 12px; cursor: pointer; box-shadow: 0 2px 12px #00000004; }
+.touch:hover { background: #222; color: #fff; border-color: #222; }
+.information { padding-top: 20px; }
+.title { font-size: 36px; letter-spacing: .12em; font-weight: 400; margin: 0; }
+.price { margin: 28px 0 42px; font-size: 20px; letter-spacing: .04em; }
+.price span { display: block; font-size: 10px; color: #777; margin-bottom: 8px; letter-spacing: .08em; }
+.specs { margin: 0; border-top: 1px solid #e6e6e6; font-size: 12px; line-height: 1.9; }
+.spec { display: grid; grid-template-columns: 80px 1fr; gap: 18px; padding: 20px 0; border-bottom: 1px solid #e6e6e6; }
+.spec dt { color: #777; }
+.spec dd { margin: 0; }
+.status { font-size: 12px; line-height: 1.9; color: #666; margin-top: 24px; }
+.back { display: inline-block; font-size: 11px; margin-top: 44px; text-underline-offset: 5px; }
+.shell a:focus-visible, .shell button:focus-visible { outline: 2px solid #333; outline-offset: 5px; }
+@media (max-width: 760px) {
+ .header { height: 76px; padding: 0 24px; }
+ .brand { font-size: 12px; letter-spacing: .12em; }
+ .nav { gap: 20px; font-size: 10px; }
+ .content { padding: 44px 24px 64px; }
+ .heading { margin-bottom: 30px; }
+ .grid { gap: 28px 16px; }
+ .cardName { font-size: 12px; margin-top: 16px; }
+ .detail { grid-template-columns: 1fr; gap: 28px; }
+ .information { padding-top: 0; }
+ .title { font-size: 30px; }
+ .touch { top: 14px; right: 14px; padding: 0 18px; }
+ .footer { padding: 24px; font-size: 10px; }
+ .breadcrumb { margin-bottom: 26px; }
+ .price { margin: 24px 0 28px; }
+}
