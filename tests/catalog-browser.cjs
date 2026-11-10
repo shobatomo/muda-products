@@ -69,7 +69,7 @@ function hash(buffer) { return crypto.createHash('sha256').update(buffer).digest
    await dialog.waitFor();
    await dialog.locator('canvas').waitFor();
    await page.waitForTimeout(2500);
-   assert.ok(requests.some(url => url.includes(slug === 'dial' ? 'muda-dial-optimized.glb' : 'muda-key-blockout.glb')));
+   assert.ok(requests.some(url => url.includes(slug === 'dial' ? 'muda-dial-optimized.glb' : 'muda-key-v1.0.glb')));
    assert.ok(!requests.some(url => url.includes(slug === 'dial' ? 'muda-key' : 'muda-dial')));
    report.network[slug + 'AfterOpen'] = [...requests];
    assert.equal(await page.getByRole('button', { name: '3D ビューを閉じる' }).evaluate(el => el === document.activeElement), true);
@@ -106,9 +106,9 @@ function hash(buffer) { return crypto.createHash('sha256').update(buffer).digest
     passed('DIAL: pointer drag and ratchet audio; blur suspends audio without queued sounds');
    } else {
     assert.equal(await page.evaluate(() => window.__audio.contexts.length), 0);
-    assert.ok(await dialog.getByText('制作中 · 形状確認のみ', { exact: true }).isVisible());
+    assert.ok(await dialog.getByText(/v1.0 モデル \/ 音は未実装/).isVisible());
     assert.equal(await dialog.getByRole('button').count(), 1);
-    passed('KEY: accurate work-in-progress status, no invented options/audio');
+    passed('KEY: current work-in-progress model, no invented options/audio');
    }
    await page.keyboard.press('Escape');
    await dialog.waitFor({ state: 'detached' });
@@ -184,7 +184,7 @@ function hash(buffer) { return crypto.createHash('sha256').update(buffer).digest
   assert.equal(await fp.getByRole('dialog').getByRole('alert').count(), 0);
   await fp.getByRole('button', { name: '3D ビューを閉じる' }).click();
   passed('Audio creation failure still opens/closes the viewer');
-  await fp.route('**/models/muda-key-blockout.glb', route => route.abort());
+  await fp.route('**/models/muda-key-v1.0.glb', route => route.abort());
   await fp.goto(base + '/products/key');
   await fp.getByRole('button', { name: '触ってみる' }).click();
   await fp.getByRole('alert').filter({ hasText: '3D を表示できませんでした' }).waitFor();

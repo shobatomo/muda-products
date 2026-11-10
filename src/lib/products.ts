@@ -15,14 +15,14 @@ export const products = [
     {
         slug: "key",
         name: "KEY",
-        image: "/images/products/key-blockout.png",
-        imageAlt: "KEY の制作中の単色形状確認モデル",
+        image: "/images/products/key-v1.0.png",
+        imageAlt: "KEY v1.0 のロゴ入りキーキャップとハウジング",
         price: "¥6,800",
         specs: [
             ["サイズ", "約 W30 × D30 × H25 mm"],
             ["素材", "アルミニウム、樹脂"],
-            ["機能", "キー押下（制作中）"],
-            ["特長", "キーキャップ、軸、ベースの単独キー構成"],
+            ["機能", "ドラッグ押下、リリース復帰（試作）"],
+            ["特長", "ロゴ入りキャップと赤い軸が連動。ばね・音は制作予定"],
         ],
     },
 ] as const;
