@@ -25,7 +25,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 <h1 className={styles.title}>{product.name}</h1>
                 <p className={styles.price}><span>参考価格</span>{product.price}</p>
                 <dl className={styles.specs}>{product.specs.map(([label, value]) => <div className={styles.spec} key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-                {product.slug === "key" && <p className={styles.status}>v1.0 の制作中モデルです。キーキャップを下へドラッグすると沈み、離すと戻ります。細かな質感・音・素材切替は今後追加予定です。</p>}
+                {product.slug === "key" && <p className={styles.status}>v1.1 の制作中モデルです。キーキャップを下へドラッグすると沈み、離すと戻ります。細かな質感・音・素材切替は今後追加予定です。</p>}
                 <Link className={styles.back} href="/products">← 商品一覧</Link>
             </div>
         </div>

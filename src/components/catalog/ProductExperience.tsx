@@ -29,7 +29,7 @@ export function ProductExperience({ product }: { product: Product }) {
     }
 
     return <div className={styles.media}>
-        <Image src={product.image} alt={product.imageAlt} width={1000} height={1000} className={styles.image} sizes="(max-width: 760px) 100vw, 55vw" preload />
+        <Image src={product.slug === "key" ? "/images/products/key-v1.0-front.png" : product.image} alt={product.imageAlt} width={1000} height={1000} className={styles.image} sizes="(max-width: 760px) 100vw, 55vw" preload />
         <button className={styles.touch} onClick={show} aria-haspopup="dialog">触ってみる <span aria-hidden="true">↗</span></button>
         {session && <TouchModal name={product.name} onClose={close} audio={session.audio}>
             {product.slug === "dial" ? <DialViewer audio={session.audio} /> : <KeyViewer />}

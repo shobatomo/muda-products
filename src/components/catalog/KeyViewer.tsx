@@ -61,6 +61,6 @@ export default function KeyViewer() {
                 <Bounds fit clip observe margin={1.8} maxDuration={0}><Center><MudaKey /></Center></Bounds>
             </Suspense>
         </Canvas>
-        <p className={styles.status}>キーキャップを下へドラッグ · 離すと戻る<br />周囲のドラッグで回転 · v1.0 モデル / 音は未実装</p>
+        <p className={styles.status}>キーキャップを下へドラッグ · 離すと戻る<br />周囲のドラッグで回転 · v1.1 モデル / 音は未実装</p>
     </div>;
 }
