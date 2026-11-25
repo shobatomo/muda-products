@@ -4,17 +4,16 @@ import { useGLTF } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { MathUtils, Raycaster, Vector2, type Object3D } from "three";
-import { RED_KEY_FEEL, redKeyDepth } from "@/lib/key-feel";
+import { KEY_SWITCHES, keyDragInput, mapKeySwitchDepth, type KeySwitchId } from "@/lib/key-feel";
 
 export const KEY_MODEL_URL = "/models/muda-key-v1.1.glb?v=20261117-170652";
 const PUSH_HANDLE = "KEY-push-handle";
 // glTF is Y-up, in metres. Move the parent, not its scaled cap/stem children.
 // This is a provisional visual stroke, not a force or spring simulation.
-const TRAVEL = RED_KEY_FEEL.travel;
-const PRESS_DAMPING = RED_KEY_FEEL.pressDamping;
-const RETURN_DAMPING = RED_KEY_FEEL.returnDamping;
+const MAX_VISUAL_TRAVEL = 0.0105;
 
-export function MudaKey() {
+export function MudaKey({ axis }: { axis: KeySwitchId }) {
+    const profile = KEY_SWITCHES[axis].motion;
     const { scene: original } = useGLTF(KEY_MODEL_URL, false);
     const { gl, camera, controls, invalidate } = useThree();
     // Own transforms per viewer; preserve the GLB's materials, textures and loader cache.
@@ -40,6 +39,7 @@ export function MudaKey() {
         startY: 0,
         target: 0,
         depth: 0,
+        latched: false,
     });
 
     useEffect(() => {
@@ -55,6 +55,7 @@ export function MudaKey() {
             const id = current.pointer;
             current.pointer = null;
             current.target = 0;
+            current.latched = false;
             if (id !== null) {
                 if (canvas.hasPointerCapture(id))
                     canvas.releasePointerCapture(id);
@@ -86,7 +87,9 @@ export function MudaKey() {
             event.stopImmediatePropagation();
             current.pointer = event.pointerId;
             current.startY = event.clientY;
-            current.target = RED_KEY_FEEL.initialDepth;
+            const contact = mapKeySwitchDepth(axis, profile.initialDepth, false);
+            current.target = contact.depth;
+            current.latched = contact.latched;
             if (orbit) {
                 orbitWasEnabled = orbit.enabled;
                 orbit.enabled = false;
@@ -100,10 +103,14 @@ export function MudaKey() {
                 release();
                 return;
             }
-            current.target = redKeyDepth(
+            const input = keyDragInput(
+                profile,
                 event.clientY - current.startY,
                 Math.min(canvas.clientWidth, canvas.clientHeight),
             );
+            const next = mapKeySwitchDepth(axis, input, current.latched);
+            current.target = next.depth;
+            current.latched = next.latched;
             invalidate();
         }
         function up(event: PointerEvent) {
@@ -141,11 +148,11 @@ export function MudaKey() {
             handle.position.y = restY;
             moving.current = null;
         };
-    }, [camera, controls, gl, handle, invalidate, restY, scene]);
+    }, [axis, camera, controls, gl, handle, invalidate, profile, restY, scene]);
 
     useFrame((_, delta) => {
         const current = motion.current;
-        const damping = current.target === 0 ? RETURN_DAMPING : PRESS_DAMPING;
+        const damping = current.target === 0 ? profile.returnDamping : profile.pressDamping;
         current.depth = MathUtils.damp(
             current.depth,
             current.target,
@@ -155,7 +162,7 @@ export function MudaKey() {
         if (Math.abs(current.depth - current.target) < 0.0001)
             current.depth = current.target;
         const part = moving.current;
-        if (part) part.object.position.y = part.restY - current.depth * TRAVEL;
+        if (part) part.object.position.y = part.restY - current.depth * MathUtils.clamp(profile.travel, 0, MAX_VISUAL_TRAVEL);
         // Demand rendering rests when the key stops moving.
         if (current.depth !== current.target) invalidate();
     });
